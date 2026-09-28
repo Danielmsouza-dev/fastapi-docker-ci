@@ -1,0 +1,48 @@
+name: Python tests and Docker build
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-root --no-interaction
+
+      - name: Run tests
+        run: poetry run pytest
+
+      - name: Build Docker image
+        run: docker build -t fastapi-app:latest .
+
+      - name: Run container smoke test
+        run: |
+          docker run --detach --name fastapi-app-smoke -p 127.0.0.1:8000:8000 fastapi-app:latest
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/health; then
+              docker rm --force fastapi-app-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs fastapi-app-smoke
+          docker rm --force fastapi-app-smoke
+          exit 1
